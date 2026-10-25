@@ -581,7 +581,12 @@ chatHookCleanups.push(onBeforeMessageComposed(async (_message, context) => {
 }))
 
 chatHookCleanups.push(onBeforeSend(async (_message, context) => {
-  if (holdsVoice(context))
+  if (!holdsVoice(context))
+    return
+  // VRM has no motion groups; the think expression stands in for the Live2D think motion.
+  if (stageModelRenderer.value === 'vrm')
+    emotionsQueue.enqueue({ name: Emotion.Think, intensity: 1 })
+  else
     currentMotion.value = { group: EmotionThinkMotionName }
 }))
 
