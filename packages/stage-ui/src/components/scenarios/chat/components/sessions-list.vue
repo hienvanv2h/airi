@@ -11,6 +11,8 @@ export interface SessionRow {
   preview: string
   isActive: boolean
   activityAtLabel: string
+  /** The session's character, set only when the list holds sessions of more than one character. */
+  characterName?: string
 }
 </script>
 
@@ -32,6 +34,10 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const characterChipClass = [
+  'max-w-32 shrink-0 truncate rounded-full px-1.5 text-[11px] leading-4',
+  'bg-primary-100/80 text-primary-700 dark:bg-primary-900/60 dark:text-primary-200',
+]
 // The expanded row belongs to this open list, never to persisted session state.
 const expandedSessionId = shallowRef<string>()
 const pendingDeleteSessionId = shallowRef<string>()
@@ -108,6 +114,7 @@ function deleteDesktopSession(sessionId: string) {
               <span :class="['min-w-0 flex-1']">
                 <span :class="['block truncate text-sm font-medium']">{{ row.preview }}</span>
                 <span :class="['mt-0.5 flex items-center gap-2 text-xs font-normal text-neutral-500 dark:text-neutral-400']">
+                  <span v-if="row.characterName" :title="row.characterName" :class="characterChipClass">{{ row.characterName }}</span>
                   <span>{{ row.activityAtLabel }}</span>
                   <span
                     v-if="row.meta.cloudChatId"
@@ -208,6 +215,7 @@ function deleteDesktopSession(sessionId: string) {
                   <span :class="['min-w-0 flex-1']">
                     <span :class="['block truncate text-sm font-medium']">{{ row.preview }}</span>
                     <span :class="['flex items-center gap-2 text-xs font-normal text-neutral-500 dark:text-neutral-400', props.compact ? 'mt-0.5' : 'mt-1']">
+                      <span v-if="row.characterName" :title="row.characterName" :class="characterChipClass">{{ row.characterName }}</span>
                       <span>{{ row.activityAtLabel }}</span>
                       <span v-if="row.isActive && !props.compact" :class="['text-primary-600 dark:text-primary-300']">{{ t('stage.chat.sessions.current') }}</span>
                       <span v-if="row.meta.cloudChatId" role="img" :aria-label="t('stage.chat.sessions.cloud-badge')" :title="t('stage.chat.sessions.cloud-badge')" :class="['i-solar:cloud-check-outline size-4 shrink-0']" />

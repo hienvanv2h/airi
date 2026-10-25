@@ -34,7 +34,8 @@ const now = useNow({ interval: 60_000 })
 const chatSession = useChatSessionStore()
 const chat = useChatStore()
 const { sessionMetas, sessionMessages, activeSessionId } = storeToRefs(chatSession)
-const { activeCardId } = storeToRefs(useAiriCardStore())
+const cardStore = useAiriCardStore()
+const { activeCardId } = storeToRefs(cardStore)
 const { userId } = storeToRefs(useAuthStore())
 const { activeModel } = storeToRefs(useConsciousnessStore())
 const { trackChatSessionSelected, trackChatSessionStarted } = useAnalytics()
@@ -86,8 +87,16 @@ function activityAtFor(meta: ChatSessionMeta): number {
   return lastMessageAt ?? meta.createdAt
 }
 
+/** Names the session's character by nickname, then name; a deleted card has none. */
+function characterNameFor(meta: ChatSessionMeta): string | undefined {
+  const card = cardStore.getCard(meta.characterId)
+  return card?.nickname || card?.name
+}
+
 const rows = computed<SessionRow[]>(() => {
   const referenceTime = Math.max(now.value.getTime(), Date.now())
+  // One character needs no label; the chip only tells several characters apart.
+  const showCharacter = new Set(ownedSessions.value.map(meta => meta.characterId)).size > 1
   return ownedSessions.value
     .map(meta => ({ meta, activityAt: activityAtFor(meta) }))
     .sort((first, second) => second.activityAt - first.activityAt)
@@ -96,6 +105,7 @@ const rows = computed<SessionRow[]>(() => {
       preview: previewFor(meta),
       isActive: meta.sessionId === activeSessionId.value,
       activityAtLabel: intlFormatDistance(activityAt, referenceTime, { locale: locale.value }),
+      characterName: showCharacter ? characterNameFor(meta) : undefined,
     }))
 })
 
