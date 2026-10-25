@@ -184,3 +184,54 @@ describe('pr #2458 migrates the global Stage model of v0.12.0-beta.5 and earlier
     expect(stageModelStore.stageModelSelected).toBe('preset-live2d-1')
   })
 })
+
+describe('airi card resumes the last activated Character', () => {
+  const pinias: Array<ReturnType<typeof createPinia>> = []
+
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
+  afterEach(() => {
+    for (const pinia of pinias.splice(0))
+      disposePinia(pinia)
+    localStorage.clear()
+  })
+
+  /** Starts the app again on the cards and keys that `localStorage` holds. */
+  async function launch() {
+    const pinia = createPinia()
+    createApp({}).use(pinia).use(PiniaColada)
+    pinias.push(pinia)
+    setActivePinia(pinia)
+    const cardStore = useAiriCardStore()
+    await cardStore.initialize()
+    // The card map writes to `localStorage` in a watcher. Let it flush before the next launch.
+    await nextTick()
+    return cardStore
+  }
+
+  it('activates the last selected card after a reload', async () => {
+    const firstRun = await launch()
+    const cardId = await firstRun.addCard({ name: 'Resumed Character', version: '1.0.0', description: 'Survives a reload.' }, 'scratch')
+    await firstRun.activateCard(cardId)
+    await nextTick()
+
+    const secondRun = await launch()
+
+    expect(secondRun.activeCardId).toBe(cardId)
+    expect(secondRun.activeCard?.name).toBe('Resumed Character')
+  })
+
+  it('falls back to the built-in card when the last selected card is gone', async () => {
+    const firstRun = await launch()
+    const cardId = await firstRun.addCard({ name: 'Removed Character', version: '1.0.0', description: 'Deleted later.' }, 'scratch')
+    await firstRun.activateCard(cardId)
+    await firstRun.removeCard(cardId)
+    await nextTick()
+
+    const secondRun = await launch()
+
+    expect(secondRun.activeCardId).toBe('default')
+  })
+})

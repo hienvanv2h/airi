@@ -137,9 +137,11 @@ export const useAiriCardStore = defineStore('airi-card', () => {
   const displayModels = useDisplayModelsStore()
 
   // Character configuration is durable. Runtime selection is replicated by
-  // Pinia and starts from the built-in Character for each application run.
+  // Pinia and starts from the last activated Character for each application run.
   const cards = useLocalStorageManualReset<Map<string, AiriCard>>('airi-cards', new Map(), { listenToStorageChanges: false })
   const activeCardId = shallowRef('default')
+  // The last card the user activated, so a reload resumes it instead of the built-in card.
+  const lastActiveCardId = useLocalStorageManualReset<string>('airi-card/last-active-id', 'default', { listenToStorageChanges: false })
   // The active Avatar Model is runtime state. Pinia replicates it between
   // windows, but the Character configuration remains its only durable owner.
   const selectedAvatarModelId = shallowRef<string>()
@@ -1209,6 +1211,8 @@ export const useAiriCardStore = defineStore('airi-card', () => {
     // replace it with inheritance; the old placeholder has no provenance marker.
     // The active id and card map are persisted separately. Older versions
     // could delete the selected card without repairing its stored id.
+    if (activeCardId.value === 'default' && cards.value.has(lastActiveCardId.value))
+      activeCardId.value = lastActiveCardId.value
     if (!cards.value.has(activeCardId.value))
       activeCardId.value = 'default'
 
@@ -1265,6 +1269,7 @@ export const useAiriCardStore = defineStore('airi-card', () => {
       return false
 
     activeCardId.value = id
+    lastActiveCardId.value = id
     selectedAvatarModelId.value = resolveDefaultAvatarModelId()
     await applyActiveCardSettings()
     return true
@@ -1417,6 +1422,7 @@ export const useAiriCardStore = defineStore('airi-card', () => {
     appliedModules = undefined
     moduleDefaults.reset()
     cards.reset()
+    lastActiveCardId.reset()
     activeCardId.value = 'default'
     selectedAvatarModelId.value = undefined
   }
