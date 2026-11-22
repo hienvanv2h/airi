@@ -1000,6 +1000,7 @@ defineExpose({
   releaseExpression: (expression: string, afterMs = 0) => {
     modelRef.value?.releaseExpression(expression, afterMs)
   },
+  currentEmotion: computed(() => modelRef.value?.currentEmotion ?? null),
   // NOTICE: External runtime hooks are intentionally separate from internal VRM model hooks.
   // This public frame hook is reserved for live pose/tracking input and is forwarded to VRMModel
   // without exposing the internal model/material lifecycle hook pipeline.

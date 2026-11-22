@@ -21,7 +21,7 @@ import { ThreeScene } from '@proj-airi/stage-ui-three'
 import { animations } from '@proj-airi/stage-ui-three/assets/vrm'
 import { createQueue } from '@proj-airi/stream-kit'
 import { Callout } from '@proj-airi/ui'
-import { useBroadcastChannel, useEventListener } from '@vueuse/core'
+import { useBroadcastChannel, useEventListener, useLocalStorage } from '@vueuse/core'
 // import { createTransformers } from '@xsai-transformers/embed'
 // import embedWorkerURL from '@xsai-transformers/embed/worker?worker&url'
 // import { embed } from '@xsai/embed'
@@ -29,6 +29,7 @@ import { storeToRefs } from 'pinia'
 import { computed, nextTick, onUnmounted, ref, shallowRef, watch } from 'vue'
 
 import StageAvatarModelMissing from './stage-avatar-model-missing.vue'
+import StageEmotionDebugPanel from './stage-emotion-debug-panel.vue'
 import StageRenderError from './stage-render-error.vue'
 
 // import { useDuckDb } from '../../composables/use-duck-db'
@@ -566,6 +567,7 @@ const VRM_THINK_EXPRESSION = EMOTION_VRMExpressionName_value[Emotion.Think]
 const VRM_THINK_HOLD_TIMEOUT_MS = 60_000
 const VRM_THINK_RELEASE_AFTER_FIRST_TOKEN_MS = 3000
 let vrmThinkHold: { turnId: string, timeout: ReturnType<typeof setTimeout> } | undefined
+const vrmThinkHolding = ref(false)
 
 function startVrmThinkHold(turnId: string) {
   clearVrmThinkHold()
@@ -574,6 +576,7 @@ function startVrmThinkHold(turnId: string) {
     turnId,
     timeout: setTimeout(releaseVrmThinkHold, VRM_THINK_HOLD_TIMEOUT_MS, turnId, 0),
   }
+  vrmThinkHolding.value = true
 }
 
 function releaseVrmThinkHold(turnId: string | undefined, afterMs: number) {
@@ -587,6 +590,7 @@ function clearVrmThinkHold() {
   if (vrmThinkHold)
     clearTimeout(vrmThinkHold.timeout)
   vrmThinkHold = undefined
+  vrmThinkHolding.value = false
 }
 
 chatHookCleanups.push(clearVrmThinkHold)
@@ -595,6 +599,26 @@ watch(chatSending, (sending) => {
   if (!sending)
     releaseVrmThinkHold(undefined, 0)
 })
+
+// Dev-only panel that fires emotions on the stage without the LLM (Ctrl+Shift+E).
+const emotionDebugEnabled = import.meta.env.DEV
+const emotionDebugOpen = useLocalStorage('stage/debug/emotion-panel-open', false)
+if (emotionDebugEnabled) {
+  useEventListener('keydown', (event: KeyboardEvent) => {
+    if (event.ctrlKey && event.shiftKey && event.code === 'KeyE') {
+      event.preventDefault()
+      emotionDebugOpen.value = !emotionDebugOpen.value
+    }
+  })
+}
+
+const emotionDebugHandlers = {
+  emotion: (name: string, intensity: number) => emotionsQueue.enqueue({ name: name as Emotion, intensity }),
+  expression: (name: string, intensity: number) => vrmViewerRef.value?.setExpression(name, intensity),
+  special: (token: string) => void playSpecialToken(token).catch(error => console.error('Debug special token failed', error)),
+  hold: () => startVrmThinkHold('emotion-debug'),
+  release: () => releaseVrmThinkHold(undefined, 0),
+}
 
 chatHookCleanups.push(onBeforeSend(async (_message, context) => {
   if (!holdsVoice(context))
@@ -782,6 +806,17 @@ defineExpose({
         :speech-active="nowSpeaking"
         @error="reportStageRenderError"
         @vrm-interact="onVRMInteract"
+      />
+      <StageEmotionDebugPanel
+        v-if="emotionDebugEnabled && emotionDebugOpen && stageModelRenderer === 'vrm' && showStage"
+        :current="vrmViewerRef?.currentEmotion"
+        :holding="vrmThinkHolding"
+        @emotion="emotionDebugHandlers.emotion"
+        @expression="emotionDebugHandlers.expression"
+        @special="emotionDebugHandlers.special"
+        @hold="emotionDebugHandlers.hold"
+        @release="emotionDebugHandlers.release"
+        @close="emotionDebugOpen = false"
       />
       <SpineScene
         v-if="stageModelRenderer === 'spine' && showStage"

@@ -1126,6 +1126,8 @@ defineExpose({
     vrmFrameRuntimeHook.value = hook
   },
   scene: computed(() => vrm.value?.scene),
+  /** Emotion the emote currently drives, or null when it rests on no emotion. */
+  currentEmotion: computed(() => vrmEmote.value?.currentEmotion.value ?? null),
   lookAtUpdate(target: Vec3) {
     idleEyeSaccades.instantUpdate(vrm.value, target)
   },
