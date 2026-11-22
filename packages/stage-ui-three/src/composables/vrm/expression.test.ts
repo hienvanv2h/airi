@@ -246,4 +246,54 @@ describe('useVRMEmote', () => {
     emote.update(0.016)
     expect(vrm.expressionManager?.setValue).not.toHaveBeenCalled()
   })
+
+  it('holds an emotion set without a reset until it is released', () => {
+    vi.useFakeTimers()
+    try {
+      const vrm = createMockVRMCore()
+      const emote = useVRMEmote(vrm)
+
+      emote.setEmotion('think', 1)
+      vi.advanceTimersByTime(60_000)
+      expect(emote.currentEmotion.value).toBe('think')
+
+      emote.releaseEmotion('think', 3000)
+      vi.advanceTimersByTime(2999)
+      expect(emote.currentEmotion.value).toBe('think')
+      vi.advanceTimersByTime(1)
+      expect(emote.currentEmotion.value).toBe('neutral')
+    }
+    finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('returns a held emotion to neutral at once when released with no delay', () => {
+    const vrm = createMockVRMCore()
+    const emote = useVRMEmote(vrm)
+
+    emote.setEmotion('think', 1)
+    emote.releaseEmotion('think', 0)
+    expect(emote.currentEmotion.value).toBe('neutral')
+  })
+
+  it('leaves an emotion that replaced the held one to its own reset', () => {
+    vi.useFakeTimers()
+    try {
+      const vrm = createMockVRMCore()
+      const emote = useVRMEmote(vrm)
+
+      emote.setEmotion('think', 1)
+      // The reply's first ACT replaces the held think face before the release.
+      emote.setEmotionWithResetAfter('happy', 3000, 1)
+      emote.releaseEmotion('think', 0)
+      expect(emote.currentEmotion.value).toBe('happy')
+
+      vi.advanceTimersByTime(3000)
+      expect(emote.currentEmotion.value).toBe('neutral')
+    }
+    finally {
+      vi.useRealTimers()
+    }
+  })
 })

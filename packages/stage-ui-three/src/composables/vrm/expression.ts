@@ -204,6 +204,25 @@ export function useVRMEmote(vrm: VRMCore) {
     }, ms) as unknown as number
   }
 
+  // Ends an emotion that was set with setEmotion and no reset (a hold).
+  // When another emotion has replaced it, that emotion owns its own reset,
+  // so the release does nothing.
+  const releaseEmotion = (emotionName: string, ms: number) => {
+    if (currentEmotion.value !== emotionName)
+      return
+
+    clearResetTimeout()
+    if (ms <= 0) {
+      setEmotion('neutral')
+      return
+    }
+
+    resetTimeout.value = setTimeout(() => {
+      setEmotion('neutral')
+      resetTimeout.value = undefined
+    }, ms) as unknown as number
+  }
+
   // isEmoteActive's only consumer (VRMModel.vue) uses it to suppress
   // procedural blinking, which only matters for morphs that actually
   // deform the eye region. Viseme mouth morphs (aa/ee/ih/oh/ou) never do,
@@ -374,6 +393,7 @@ export function useVRMEmote(vrm: VRMCore) {
     isEmoteActive,
     setEmotion,
     setEmotionWithResetAfter,
+    releaseEmotion,
     update,
     addEmotionState,
     removeEmotionState,

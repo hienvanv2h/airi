@@ -558,24 +558,66 @@ chatHookCleanups.push(onBeforeMessageComposed(async (_message, context) => {
   await setupLipSync()
 }))
 
+// The VRM think face holds from the send until the reply's first token. With
+// speech on, the first ACT plays only when its audio starts, so the face then
+// fades on the usual timer. A send that settles with no token, or times out,
+// ends the hold at once.
+const VRM_THINK_EXPRESSION = EMOTION_VRMExpressionName_value[Emotion.Think]
+const VRM_THINK_HOLD_TIMEOUT_MS = 60_000
+const VRM_THINK_RELEASE_AFTER_FIRST_TOKEN_MS = 3000
+let vrmThinkHold: { turnId: string, timeout: ReturnType<typeof setTimeout> } | undefined
+
+function startVrmThinkHold(turnId: string) {
+  clearVrmThinkHold()
+  vrmViewerRef.value?.holdExpression(VRM_THINK_EXPRESSION, 1)
+  vrmThinkHold = {
+    turnId,
+    timeout: setTimeout(releaseVrmThinkHold, VRM_THINK_HOLD_TIMEOUT_MS, turnId, 0),
+  }
+}
+
+function releaseVrmThinkHold(turnId: string | undefined, afterMs: number) {
+  if (!vrmThinkHold || (turnId !== undefined && vrmThinkHold.turnId !== turnId))
+    return
+  clearVrmThinkHold()
+  vrmViewerRef.value?.releaseExpression(VRM_THINK_EXPRESSION, afterMs)
+}
+
+function clearVrmThinkHold() {
+  if (vrmThinkHold)
+    clearTimeout(vrmThinkHold.timeout)
+  vrmThinkHold = undefined
+}
+
+chatHookCleanups.push(clearVrmThinkHold)
+
+watch(chatSending, (sending) => {
+  if (!sending)
+    releaseVrmThinkHold(undefined, 0)
+})
+
 chatHookCleanups.push(onBeforeSend(async (_message, context) => {
   if (!holdsVoice(context))
     return
   // VRM has no motion groups; the think expression stands in for the Live2D think motion.
   if (stageModelRenderer.value === 'vrm')
-    emotionsQueue.enqueue({ name: Emotion.Think, intensity: 1 })
+    startVrmThinkHold(context.turnId)
   else
     currentMotion.value = { group: EmotionThinkMotionName }
 }))
 
 chatHookCleanups.push(onTokenLiteral(async (literal, context) => {
-  if (holdsVoice(context) && !speechMuted.value)
+  if (!holdsVoice(context))
+    return
+  releaseVrmThinkHold(context.turnId, VRM_THINK_RELEASE_AFTER_FIRST_TOKEN_MS)
+  if (!speechMuted.value)
     await voice.getSpeech(context)?.write(literal)
 }))
 
 chatHookCleanups.push(onTokenSpecial(async (special, context) => {
   if (!holdsVoice(context))
     return
+  releaseVrmThinkHold(context.turnId, VRM_THINK_RELEASE_AFTER_FIRST_TOKEN_MS)
   if (speechMuted.value)
     await playSpecialToken(special, { turnId: context.turnId })
   else
