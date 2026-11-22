@@ -513,6 +513,7 @@ function bindManagedVrmInstanceRenderLoop() {
       // state machine keeps advancing either way, so emotion transitions and
       // the reset timeout stay in sync during long utterances.
       vrmEmote.value?.update(delta, { skipVisemes: isLipSyncActive })
+      applyEmoteGaze(activeVrm)
     })
     const expressionMs = measureFrameStep(tracingEnabled, () => {
       activeVrm?.expressionManager?.update()
@@ -845,7 +846,7 @@ async function loadModel() {
     nextVrmAnimationMixer = new AnimationMixer(_vrm.scene)
     nextVrmAnimationMixer.clipAction(clip).play()
 
-    nextVrmEmote = useVRMEmote(_vrm)
+    nextVrmEmote = useVRMEmote(_vrm, { metadata: _vrmInfo.expressionMetadata })
 
     /*
       * Shader setting
@@ -1105,16 +1106,44 @@ function headAnchor() {
   return { position: headPosition, radius }
 }
 
+// Whether the last frame added an emote gaze offset to the lookAt, so the plain
+// lookAt can be restored once the offset is gone. VRMLookAt only re-applies its
+// yaw/pitch when they change, which would otherwise leave the eyes turned.
+let emoteGazeApplied = false
+
+/** Turns the eyes by the gaze offset of the current expression variant (e.g. a sideways glance). */
+function applyEmoteGaze(activeVrm?: VRM) {
+  const lookAt = activeVrm?.lookAt
+  if (!lookAt)
+    return
+  const gaze = vrmEmote.value?.gazeOffset()
+  const hasGaze = !!gaze && (Math.abs(gaze.yaw) > 0.01 || Math.abs(gaze.pitch) > 0.01)
+  if (hasGaze)
+    lookAt.applier.applyYawPitch(lookAt.yaw + gaze.yaw, lookAt.pitch + gaze.pitch)
+  else if (emoteGazeApplied)
+    lookAt.applier.applyYawPitch(lookAt.yaw, lookAt.pitch)
+  emoteGazeApplied = hasGaze
+}
+
 defineExpose({
   headAnchor,
   getInteractionColliders: () => interactionColliders.value?.colliders ?? [],
-  setExpression(expression: string, intensity = 1) {
-    vrmEmote.value?.setEmotionWithResetAfter(expression, 3000, intensity)
+  /** Shows an expression for 3 s. `variant` picks one of the model's variants for it; random when omitted. */
+  setExpression(expression: string, intensity = 1, variant?: string) {
+    vrmEmote.value?.setEmotionWithResetAfter(expression, 3000, intensity, variant)
   },
   /** Shows an expression with no automatic reset until releaseExpression; short expressions meanwhile return to it. */
-  holdExpression(expression: string, intensity = 1) {
-    vrmEmote.value?.holdEmotion(expression, intensity)
+  holdExpression(expression: string, intensity = 1, variant?: string) {
+    vrmEmote.value?.holdEmotion(expression, intensity, variant)
   },
+  /** Whether the model can show this emotion directly (a built-in state or variants from its metadata). */
+  supportsExpression(expression: string) {
+    return vrmEmote.value?.hasEmotion(expression) ?? false
+  },
+  /** Emotions the model has several faces for, with their variants. */
+  expressionVariants: computed(() => vrmEmote.value?.variantMap() ?? {}),
+  /** Variant the current emotion shows, or null. */
+  currentVariant: computed(() => vrmEmote.value?.currentVariant.value ?? null),
   /** Returns a held expression to neutral after `afterMs`, unless another expression already replaced it. */
   releaseExpression(expression: string, afterMs = 0) {
     vrmEmote.value?.releaseEmotion(expression, afterMs)

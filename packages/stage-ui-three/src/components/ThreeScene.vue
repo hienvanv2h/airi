@@ -991,16 +991,19 @@ watch(directionalLightRotation, (newRotation) => {
 }, { deep: true })
 
 defineExpose({
-  setExpression: (expression: string, intensity = 1) => {
-    modelRef.value?.setExpression(expression, intensity)
+  setExpression: (expression: string, intensity = 1, variant?: string) => {
+    modelRef.value?.setExpression(expression, intensity, variant)
   },
-  holdExpression: (expression: string, intensity = 1) => {
-    modelRef.value?.holdExpression(expression, intensity)
+  holdExpression: (expression: string, intensity = 1, variant?: string) => {
+    modelRef.value?.holdExpression(expression, intensity, variant)
   },
   releaseExpression: (expression: string, afterMs = 0) => {
     modelRef.value?.releaseExpression(expression, afterMs)
   },
+  supportsExpression: (expression: string) => modelRef.value?.supportsExpression(expression) ?? false,
+  expressionVariants: computed<Record<string, string[]>>(() => modelRef.value?.expressionVariants ?? {}),
   currentEmotion: computed(() => modelRef.value?.currentEmotion ?? null),
+  currentVariant: computed(() => modelRef.value?.currentVariant ?? null),
   // NOTICE: External runtime hooks are intentionally separate from internal VRM model hooks.
   // This public frame hook is reserved for live pose/tracking input and is forwarded to VRMModel
   // without exposing the internal model/material lifecycle hook pipeline.

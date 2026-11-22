@@ -1,10 +1,13 @@
 import type { VRM, VRMCore } from '@pixiv/three-vrm'
 import type { Mesh, Object3D, Scene } from 'three'
 
+import type { VRMExpressionMetadata } from './expression-metadata'
+
 import { VRMUtils } from '@pixiv/three-vrm'
 import { VRMLookAtQuaternionProxy } from '@pixiv/three-vrm-animation'
 import { Box3, Group, Quaternion, Vector3 } from 'three'
 
+import { parseExpressionMetadata } from './expression-metadata'
 import { useVRMLoader } from './loader'
 
 interface GLTFUserdata extends Record<string, any> {
@@ -21,6 +24,7 @@ export async function loadVrm(model: string, options?: {
   modelCenter: Vector3
   modelSize: Vector3
   initialCameraOffset: Vector3
+  expressionMetadata?: VRMExpressionMetadata
 } | undefined> {
   const loader = useVRMLoader()
   const gltf = await loader.loadAsync(model, progress => options?.onProgress?.(progress))
@@ -129,5 +133,6 @@ export async function loadVrm(model: string, options?: {
     modelCenter,
     modelSize,
     initialCameraOffset,
+    expressionMetadata: parseExpressionMetadata(userData),
   }
 }

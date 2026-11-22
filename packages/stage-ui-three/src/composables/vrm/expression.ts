@@ -1,5 +1,7 @@
 import type { VRMCore } from '@pixiv/three-vrm-core'
 
+import type { VRMExpressionMetadata } from './expression-metadata'
+
 import { computed, ref } from 'vue'
 
 interface EmotionState {
@@ -12,8 +14,27 @@ interface EmotionState {
   blendDuration?: number
 }
 
-export function useVRMEmote(vrm: VRMCore) {
+/** Eye gaze offset in degrees, three-vrm lookAt convention (yaw > 0 = model's left, pitch < 0 = up). */
+export interface EmoteGaze {
+  yaw: number
+  pitch: number
+}
+
+export interface VRMEmoteOptions {
+  /** Expression variants and gaze from the model (see expression-metadata.ts). */
+  metadata?: VRMExpressionMetadata
+  /** Random source for picking variants, in [0, 1). Tests pass a fixed one. */
+  random?: () => number
+}
+
+// Blend duration for a variant of an emotion that has no built-in state (e.g. awkward).
+const DEFAULT_VARIANT_BLEND_DURATION = 0.4
+
+export function useVRMEmote(vrm: VRMCore, emoteOptions: VRMEmoteOptions = {}) {
+  const random = emoteOptions.random ?? Math.random
   const currentEmotion = ref<string | null>(null)
+  // Variant expression picked for the current emotion, or null when it has no variants.
+  const currentVariant = ref<string | null>(null)
   const isTransitioning = ref(false)
   const transitionProgress = ref(0)
   const isVisemeTransitioning = ref(false)
@@ -99,20 +120,70 @@ export function useVRMEmote(vrm: VRMCore) {
     }],
   ])
 
-  // Morphs the emote owns: only expressions referenced by emotion states.
-  // Blink and animation-driven expressions stay under their own controllers,
-  // so the emote must never assert values (including 0) for them.
+  const modelExpressionNames = (): string[] =>
+    vrm.expressionManager ? Object.keys(vrm.expressionManager.expressionMap) : []
+
+  const findModelExpression = (name: string, modelNames = modelExpressionNames()): string | undefined =>
+    modelNames.find(n => n.toLowerCase() === name.toLowerCase())
+
+  // Variants per emotion from the model's metadata. A variant named like a
+  // built-in state (happy, think, ...) uses that state; any other name is a
+  // custom expression of the model at full weight. Names the model lacks are
+  // dropped, and an emotion left without variants keeps its single face.
+  const variantsByEmotion = new Map<string, string[]>()
+  for (const [emotion, names] of Object.entries(emoteOptions.metadata?.emotions ?? {})) {
+    const usable = names.filter(name => emotionStates.has(name) || findModelExpression(name))
+    if (usable.length > 0)
+      variantsByEmotion.set(emotion, usable)
+  }
+
+  const hasEmotion = (emotionName: string): boolean =>
+    emotionStates.has(emotionName) || variantsByEmotion.has(emotionName)
+
+  const variantsOf = (emotionName: string): string[] => [...(variantsByEmotion.get(emotionName) ?? [])]
+
+  /** Every emotion that has variants, with them. */
+  const variantMap = (): Record<string, string[]> =>
+    Object.fromEntries([...variantsByEmotion].map(([emotion, variants]) => [emotion, [...variants]]))
+
+  const variantState = (emotionName: string, variant: string): EmotionState =>
+    emotionStates.get(variant) ?? {
+      expression: [{ name: variant, value: 1 }],
+      blendDuration: emotionStates.get(emotionName)?.blendDuration ?? DEFAULT_VARIANT_BLEND_DURATION,
+    }
+
+  // Uniform random pick; the same variant may come up twice in a row.
+  const pickVariant = (variants: string[]): string =>
+    variants[Math.floor(random() * variants.length)] ?? variants[0]
+
+  // Morphs the emote owns: only expressions referenced by emotion states and
+  // variants. Blink and animation-driven expressions stay under their own
+  // controllers, so the emote must never assert values (including 0) for them.
   const ownedExpressionNames = (modelNames: string[]): string[] => {
     const owned = new Set<string>()
     for (const state of emotionStates.values()) {
       for (const expr of state.expression || []) {
-        const match = modelNames.find(n => n.toLowerCase() === expr.name.toLowerCase())
+        const match = findModelExpression(expr.name, modelNames)
+        if (match)
+          owned.add(match)
+      }
+    }
+    for (const variants of variantsByEmotion.values()) {
+      for (const variant of variants) {
+        const match = emotionStates.has(variant) ? undefined : findModelExpression(variant, modelNames)
         if (match)
           owned.add(match)
       }
     }
     return [...owned]
   }
+
+  // Gaze offset the current variant asks for, blended like the morphs.
+  const zeroGaze = (): EmoteGaze => ({ yaw: 0, pitch: 0 })
+  const gaze = zeroGaze()
+  let gazeStart = zeroGaze()
+  let gazeTarget = zeroGaze()
+  let currentBlendDuration = 0.3
 
   // Viseme mouth morphs driven by lip sync; the emote yields these while
   // speech is active so phoneme weights are not overwritten.
@@ -125,19 +196,36 @@ export function useVRMEmote(vrm: VRMCore) {
     }
   }
 
-  const setEmotion = (emotionName: string, intensity = 1) => {
+  /**
+   * Shows an emotion. When the model gives the emotion variants, `variant`
+   * picks one of them; without it a random one is used.
+   */
+  const setEmotion = (emotionName: string, intensity = 1, variant?: string) => {
     const normalizedIntensity = clampIntensity(intensity)
     if (normalizedIntensity <= 0)
       return
 
-    if (!emotionStates.has(emotionName)) {
+    if (!hasEmotion(emotionName)) {
       console.warn(`Emotion ${emotionName} not found`)
       return
     }
 
     clearResetTimeout()
 
-    const emotionState = emotionStates.get(emotionName)!
+    const variants = variantsByEmotion.get(emotionName)
+    const chosen = variants
+      ? (variant && variants.includes(variant) ? variant : pickVariant(variants))
+      : null
+    const emotionState = chosen ? variantState(emotionName, chosen) : emotionStates.get(emotionName)!
+    currentVariant.value = chosen
+    currentBlendDuration = emotionState.blendDuration || 0.3
+
+    const variantGaze = chosen ? emoteOptions.metadata?.gaze[chosen] : undefined
+    gazeStart = { ...gaze }
+    gazeTarget = variantGaze
+      ? { yaw: variantGaze[0] * normalizedIntensity, pitch: variantGaze[1] * normalizedIntensity }
+      : zeroGaze()
+
     currentEmotion.value = emotionName
     isTransitioning.value = true
     transitionProgress.value = 0
@@ -192,21 +280,22 @@ export function useVRMEmote(vrm: VRMCore) {
 
   // A held emotion is the resting face: timed resets return to it instead of
   // neutral, so a short emotion during the hold (a touch) comes back to it.
-  let restingEmotion: { name: string, intensity: number } | null = null
+  // It keeps its variant, so returning to it shows the same face.
+  let restingEmotion: { name: string, intensity: number, variant: string | null } | null = null
 
   const returnToRest = () => {
     if (restingEmotion)
-      setEmotion(restingEmotion.name, restingEmotion.intensity)
+      setEmotion(restingEmotion.name, restingEmotion.intensity, restingEmotion.variant ?? undefined)
     else
       setEmotion('neutral')
   }
 
-  const setEmotionWithResetAfter = (emotionName: string, ms: number, intensity = 1) => {
+  const setEmotionWithResetAfter = (emotionName: string, ms: number, intensity = 1, variant?: string) => {
     if (clampIntensity(intensity) <= 0)
       return
 
     clearResetTimeout()
-    setEmotion(emotionName, intensity)
+    setEmotion(emotionName, intensity, variant)
 
     // Reset to the resting face, which is neutral unless an emotion is held.
     resetTimeout.value = setTimeout(() => {
@@ -216,12 +305,12 @@ export function useVRMEmote(vrm: VRMCore) {
   }
 
   // Shows an emotion with no reset, and makes it the resting face until releaseEmotion.
-  const holdEmotion = (emotionName: string, intensity = 1) => {
-    if (clampIntensity(intensity) <= 0 || !emotionStates.has(emotionName))
+  const holdEmotion = (emotionName: string, intensity = 1, variant?: string) => {
+    if (clampIntensity(intensity) <= 0 || !hasEmotion(emotionName))
       return
 
-    restingEmotion = { name: emotionName, intensity }
-    setEmotion(emotionName, intensity)
+    setEmotion(emotionName, intensity, variant)
+    restingEmotion = { name: emotionName, intensity, variant: currentVariant.value }
   }
 
   // Ends a hold. When another emotion has replaced the held one, that
@@ -306,8 +395,7 @@ export function useVRMEmote(vrm: VRMCore) {
       if (visemeStartValues.value.size > 0) {
         isVisemeTransitioning.value = true
         visemeTransitionProgress.value = 0
-        const emotionState = emotionStates.get(currentEmotion.value)
-        visemeBlendDuration.value = emotionState?.blendDuration || 0.3
+        visemeBlendDuration.value = currentBlendDuration
       }
     }
 
@@ -346,15 +434,16 @@ export function useVRMEmote(vrm: VRMCore) {
       return
 
     if (isTransitioning.value) {
-      const emotionState = emotionStates.get(currentEmotion.value)!
-      const blendDuration = emotionState.blendDuration || 0.3
-
-      transitionProgress.value += deltaTime / blendDuration
+      transitionProgress.value += deltaTime / currentBlendDuration
       const isSettling = transitionProgress.value >= 1.0
       if (isSettling) {
         transitionProgress.value = 1.0
         isTransitioning.value = false
       }
+
+      const gazeT = isSettling ? 1 : easeInOutCubic(transitionProgress.value)
+      gaze.yaw = lerp(gazeStart.yaw, gazeTarget.yaw, gazeT)
+      gaze.pitch = lerp(gazeStart.pitch, gazeTarget.pitch, gazeT)
 
       // Update all expressions with lerp (or terminal targets if isSettling)
       for (const [exprName, targetValue] of targetExpressionValues.value) {
@@ -407,11 +496,19 @@ export function useVRMEmote(vrm: VRMCore) {
     clearResetTimeout()
   }
 
+  /** Gaze offset to add to the lookAt yaw/pitch this frame; zero when no variant glances. */
+  const gazeOffset = (): Readonly<EmoteGaze> => gaze
+
   return {
     currentEmotion,
+    currentVariant,
     isTransitioning,
     isVisemeTransitioning,
     isEmoteActive,
+    hasEmotion,
+    variantsOf,
+    variantMap,
+    gazeOffset,
     setEmotion,
     setEmotionWithResetAfter,
     holdEmotion,

@@ -268,7 +268,7 @@ const emotionsQueue = createQueue<EmotionPayload>({
     async (ctx) => {
       if (stageModelRenderer.value === 'vrm') {
         // console.debug('VRM emotion anime: ', ctx.data)
-        const value = EMOTION_VRMExpressionName_value[ctx.data.name]
+        const value = resolveVrmExpression(ctx.data.name)
         if (!value)
           return
 
@@ -615,9 +615,18 @@ function isVrmReplyActive() {
   return vrmReplyActive.value
 }
 
-function holdVrmReplyExpression(expression: string, intensity: number) {
+function holdVrmReplyExpression(expression: string, intensity: number, variant?: string) {
   vrmReplyExpression.value = expression
-  vrmViewerRef.value?.holdExpression(expression, intensity)
+  vrmViewerRef.value?.holdExpression(expression, intensity, variant)
+}
+
+// A model with its own faces for an emotion (variants in its expression
+// metadata, e.g. awkward or curious) shows them; other models map the emotion
+// to one of the shared VRM expressions (awkward -> neutral, curious -> think).
+function resolveVrmExpression(emotion: Emotion): string | undefined {
+  if (vrmViewerRef.value?.supportsExpression(emotion))
+    return emotion
+  return EMOTION_VRMExpressionName_value[emotion]
 }
 
 watch(vrmReplyActive, (active) => {
@@ -642,6 +651,12 @@ if (emotionDebugEnabled) {
 const emotionDebugHandlers = {
   emotion: (name: string, intensity: number) => emotionsQueue.enqueue({ name: name as Emotion, intensity }),
   expression: (name: string, intensity: number) => vrmViewerRef.value?.setExpression(name, intensity),
+  variant: (emotion: string, variant: string, intensity: number) => {
+    if (isVrmReplyActive())
+      holdVrmReplyExpression(emotion, intensity, variant)
+    else
+      vrmViewerRef.value?.setExpression(emotion, intensity, variant)
+  },
   special: (token: string) => void playSpecialToken(token).catch(error => console.error('Debug special token failed', error)),
   hold: () => startVrmThinkHold('emotion-debug'),
   release: () => releaseVrmThinkHold(undefined, 0),
@@ -840,12 +855,15 @@ defineExpose({
       <StageEmotionDebugPanel
         v-if="emotionDebugEnabled && emotionDebugOpen && stageModelRenderer === 'vrm' && showStage"
         :current="vrmViewerRef?.currentEmotion"
+        :variant="vrmViewerRef?.currentVariant"
+        :variants="vrmViewerRef?.expressionVariants"
         :holding="vrmThinkHolding"
         :reply-active="vrmReplyActive"
         :reply-simulated="vrmReplyDebugActive"
         :reply-expression="vrmReplyExpression"
         @emotion="emotionDebugHandlers.emotion"
         @expression="emotionDebugHandlers.expression"
+        @variant="emotionDebugHandlers.variant"
         @special="emotionDebugHandlers.special"
         @hold="emotionDebugHandlers.hold"
         @release="emotionDebugHandlers.release"
