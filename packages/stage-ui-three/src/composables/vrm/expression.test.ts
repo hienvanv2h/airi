@@ -247,13 +247,13 @@ describe('useVRMEmote', () => {
     expect(vrm.expressionManager?.setValue).not.toHaveBeenCalled()
   })
 
-  it('holds an emotion set without a reset until it is released', () => {
+  it('holds an emotion until it is released', () => {
     vi.useFakeTimers()
     try {
       const vrm = createMockVRMCore()
       const emote = useVRMEmote(vrm)
 
-      emote.setEmotion('think', 1)
+      emote.holdEmotion('think', 1)
       vi.advanceTimersByTime(60_000)
       expect(emote.currentEmotion.value).toBe('think')
 
@@ -272,7 +272,7 @@ describe('useVRMEmote', () => {
     const vrm = createMockVRMCore()
     const emote = useVRMEmote(vrm)
 
-    emote.setEmotion('think', 1)
+    emote.holdEmotion('think', 1)
     emote.releaseEmotion('think', 0)
     expect(emote.currentEmotion.value).toBe('neutral')
   })
@@ -283,10 +283,60 @@ describe('useVRMEmote', () => {
       const vrm = createMockVRMCore()
       const emote = useVRMEmote(vrm)
 
-      emote.setEmotion('think', 1)
+      emote.holdEmotion('think', 1)
       // The reply's first ACT replaces the held think face before the release.
       emote.setEmotionWithResetAfter('happy', 3000, 1)
       emote.releaseEmotion('think', 0)
+      expect(emote.currentEmotion.value).toBe('happy')
+
+      vi.advanceTimersByTime(3000)
+      expect(emote.currentEmotion.value).toBe('neutral')
+    }
+    finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('returns a short emotion shown during a hold to the held emotion', () => {
+    vi.useFakeTimers()
+    try {
+      const vrm = createMockVRMCore()
+      const emote = useVRMEmote(vrm)
+
+      emote.holdEmotion('think', 0.8)
+      // A touch while the reply is pending.
+      emote.setEmotionWithResetAfter('surprised', 3000, 1)
+      vi.advanceTimersByTime(3000)
+      expect(emote.currentEmotion.value).toBe('think')
+      vi.mocked(vrm.expressionManager!.setValue).mockClear()
+      emote.update(1)
+      // The held intensity comes back with the think face.
+      expect(vrm.expressionManager?.setValue).toHaveBeenCalledWith('think', expect.closeTo(0.7 * 0.8))
+      expect(vrm.expressionManager?.setValue).toHaveBeenCalledWith('surprised', 0)
+
+      emote.releaseEmotion('think', 0)
+      expect(emote.currentEmotion.value).toBe('neutral')
+
+      // After the release, short emotions return to neutral again.
+      emote.setEmotionWithResetAfter('surprised', 3000, 1)
+      vi.advanceTimersByTime(3000)
+      expect(emote.currentEmotion.value).toBe('neutral')
+    }
+    finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('returns to neutral when a touch outlasts the release of the hold', () => {
+    vi.useFakeTimers()
+    try {
+      const vrm = createMockVRMCore()
+      const emote = useVRMEmote(vrm)
+
+      emote.holdEmotion('think', 1)
+      emote.setEmotionWithResetAfter('happy', 3000, 1)
+      // The first token arrives while the touch face still shows.
+      emote.releaseEmotion('think', 3000)
       expect(emote.currentEmotion.value).toBe('happy')
 
       vi.advanceTimersByTime(3000)

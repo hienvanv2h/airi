@@ -190,6 +190,17 @@ export function useVRMEmote(vrm: VRMCore) {
     }
   }
 
+  // A held emotion is the resting face: timed resets return to it instead of
+  // neutral, so a short emotion during the hold (a touch) comes back to it.
+  let restingEmotion: { name: string, intensity: number } | null = null
+
+  const returnToRest = () => {
+    if (restingEmotion)
+      setEmotion(restingEmotion.name, restingEmotion.intensity)
+    else
+      setEmotion('neutral')
+  }
+
   const setEmotionWithResetAfter = (emotionName: string, ms: number, intensity = 1) => {
     if (clampIntensity(intensity) <= 0)
       return
@@ -197,17 +208,27 @@ export function useVRMEmote(vrm: VRMCore) {
     clearResetTimeout()
     setEmotion(emotionName, intensity)
 
-    // Set timeout to reset to neutral
+    // Reset to the resting face, which is neutral unless an emotion is held.
     resetTimeout.value = setTimeout(() => {
-      setEmotion('neutral')
       resetTimeout.value = undefined
+      returnToRest()
     }, ms) as unknown as number
   }
 
-  // Ends an emotion that was set with setEmotion and no reset (a hold).
-  // When another emotion has replaced it, that emotion owns its own reset,
-  // so the release does nothing.
+  // Shows an emotion with no reset, and makes it the resting face until releaseEmotion.
+  const holdEmotion = (emotionName: string, intensity = 1) => {
+    if (clampIntensity(intensity) <= 0 || !emotionStates.has(emotionName))
+      return
+
+    restingEmotion = { name: emotionName, intensity }
+    setEmotion(emotionName, intensity)
+  }
+
+  // Ends a hold. When another emotion has replaced the held one, that
+  // emotion owns its own reset, which now returns to neutral.
   const releaseEmotion = (emotionName: string, ms: number) => {
+    if (restingEmotion?.name === emotionName)
+      restingEmotion = null
     if (currentEmotion.value !== emotionName)
       return
 
@@ -393,6 +414,7 @@ export function useVRMEmote(vrm: VRMCore) {
     isEmoteActive,
     setEmotion,
     setEmotionWithResetAfter,
+    holdEmotion,
     releaseEmotion,
     update,
     addEmotionState,

@@ -1111,9 +1111,9 @@ defineExpose({
   setExpression(expression: string, intensity = 1) {
     vrmEmote.value?.setEmotionWithResetAfter(expression, 3000, intensity)
   },
-  /** Shows an expression with no automatic reset, until releaseExpression or another expression replaces it. */
+  /** Shows an expression with no automatic reset until releaseExpression; short expressions meanwhile return to it. */
   holdExpression(expression: string, intensity = 1) {
-    vrmEmote.value?.setEmotion(expression, intensity)
+    vrmEmote.value?.holdEmotion(expression, intensity)
   },
   /** Returns a held expression to neutral after `afterMs`, unless another expression already replaced it. */
   releaseExpression(expression: string, afterMs = 0) {
