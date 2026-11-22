@@ -8,6 +8,12 @@ defineProps<{
   current?: string | null
   /** Whether the think face is held for a pending reply. */
   holding?: boolean
+  /** Whether a reply is open, so ACT emotions stay until it ends. */
+  replyActive?: boolean
+  /** Whether the panel simulates an open reply. */
+  replySimulated?: boolean
+  /** Reply emotion held as the resting face. */
+  replyExpression?: string
 }>()
 
 const emit = defineEmits<{
@@ -16,6 +22,7 @@ const emit = defineEmits<{
   (e: 'special', token: string): void
   (e: 'hold'): void
   (e: 'release'): void
+  (e: 'simulateReply', active: boolean): void
   (e: 'close'): void
 }>()
 
@@ -47,7 +54,13 @@ const token = ref('<|ACT {"emotion":"happy"}|>')
     <div class="text-neutral-300">
       VRM: <span class="text-white font-mono">{{ current ?? 'none' }}</span>
       <span v-if="holding" class="ml-2 rounded bg-amber-600/80 px-1">holding think</span>
+      <span v-if="replyActive" class="ml-2 rounded bg-emerald-700/80 px-1">reply{{ replyExpression ? `: ${replyExpression}` : '' }}</span>
     </div>
+
+    <label class="flex items-center gap-2 text-neutral-300">
+      <input type="checkbox" :checked="replySimulated" @change="emit('simulateReply', ($event.target as HTMLInputElement).checked)">
+      Simulate reply (ACT emotions stay until unchecked, then fade in 3 s)
+    </label>
 
     <label class="flex items-center gap-2">
       <span class="w-16 text-neutral-300">Intensity</span>

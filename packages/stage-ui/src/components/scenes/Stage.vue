@@ -272,7 +272,10 @@ const emotionsQueue = createQueue<EmotionPayload>({
         if (!value)
           return
 
-        await vrmViewerRef.value!.setExpression(value, ctx.data.intensity)
+        if (isVrmReplyActive())
+          holdVrmReplyExpression(value, ctx.data.intensity)
+        else
+          await vrmViewerRef.value!.setExpression(value, ctx.data.intensity)
       }
       else if (stageModelRenderer.value === 'live2d') {
         currentMotion.value = { group: EMOTION_EmotionMotionName_value[ctx.data.name] }
@@ -600,6 +603,30 @@ watch(chatSending, (sending) => {
     releaseVrmThinkHold(undefined, 0)
 })
 
+// A reply usually has one ACT, at its start. While a voice turn is open (until
+// its speech has played, or its stream ends without speech), the ACT emotion
+// stays as the resting face, and fades on the usual timer once the turn closes.
+const VRM_REPLY_EMOTION_LINGER_MS = 3000
+const vrmReplyDebugActive = ref(false)
+const vrmReplyActive = computed(() => voice.activeTurns.length > 0 || vrmReplyDebugActive.value)
+const vrmReplyExpression = ref<string>()
+
+function isVrmReplyActive() {
+  return vrmReplyActive.value
+}
+
+function holdVrmReplyExpression(expression: string, intensity: number) {
+  vrmReplyExpression.value = expression
+  vrmViewerRef.value?.holdExpression(expression, intensity)
+}
+
+watch(vrmReplyActive, (active) => {
+  if (active || !vrmReplyExpression.value)
+    return
+  vrmViewerRef.value?.releaseExpression(vrmReplyExpression.value, VRM_REPLY_EMOTION_LINGER_MS)
+  vrmReplyExpression.value = undefined
+})
+
 // Dev-only panel that fires emotions on the stage without the LLM (Ctrl+Shift+E).
 const emotionDebugEnabled = import.meta.env.DEV
 const emotionDebugOpen = useLocalStorage('stage/debug/emotion-panel-open', false)
@@ -618,6 +645,9 @@ const emotionDebugHandlers = {
   special: (token: string) => void playSpecialToken(token).catch(error => console.error('Debug special token failed', error)),
   hold: () => startVrmThinkHold('emotion-debug'),
   release: () => releaseVrmThinkHold(undefined, 0),
+  simulateReply: (active: boolean) => {
+    vrmReplyDebugActive.value = active
+  },
 }
 
 chatHookCleanups.push(onBeforeSend(async (_message, context) => {
@@ -811,11 +841,15 @@ defineExpose({
         v-if="emotionDebugEnabled && emotionDebugOpen && stageModelRenderer === 'vrm' && showStage"
         :current="vrmViewerRef?.currentEmotion"
         :holding="vrmThinkHolding"
+        :reply-active="vrmReplyActive"
+        :reply-simulated="vrmReplyDebugActive"
+        :reply-expression="vrmReplyExpression"
         @emotion="emotionDebugHandlers.emotion"
         @expression="emotionDebugHandlers.expression"
         @special="emotionDebugHandlers.special"
         @hold="emotionDebugHandlers.hold"
         @release="emotionDebugHandlers.release"
+        @simulate-reply="emotionDebugHandlers.simulateReply"
         @close="emotionDebugOpen = false"
       />
       <SpineScene
