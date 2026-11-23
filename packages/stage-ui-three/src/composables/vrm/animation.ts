@@ -1,7 +1,10 @@
 import type { VRMAnimation } from '@pixiv/three-vrm-animation'
 import type { VRMCore } from '@pixiv/three-vrm-core'
 import type { AnimationClip } from 'three'
+import type { GLTFParser } from 'three/addons/loaders/GLTFLoader.js'
 import type { Ref } from 'vue'
+
+import type { VRMAnimationMetadata } from './animation-metadata'
 
 import { createVRMAnimationClip } from '@pixiv/three-vrm-animation'
 import { Object3D, Vector3, VectorKeyframeTrack } from 'three'
@@ -87,6 +90,43 @@ export function reAnchorRootPositionTrack(clip: AnimationClip, _vrm: VRMCore) {
       }
     }
   })
+}
+
+/**
+ * Loads the `.vrma` clips a VRM carries in its own bufferViews (see VRMAnimationMetadata),
+ * bound to that VRM and re-anchored to its hips. Call with the rig in its rest pose.
+ * A clip that fails to load is skipped with a warning.
+ */
+export async function loadEmbeddedAnimationClips(parser: GLTFParser, metadata: VRMAnimationMetadata | undefined, vrm: VRMCore) {
+  const clips = new Map<string, AnimationClip>()
+  if (!metadata)
+    return clips
+
+  const loader = useVRMLoader()
+  const loaded = await Promise.all(Object.entries(metadata.clips).map(async ([name, { bufferView }]) => {
+    try {
+      const buffer = await parser.getDependency('bufferView', bufferView) as ArrayBuffer
+      const gltf = await loader.parseAsync(buffer, '')
+      const animation = (gltf.userData as Partial<GLTFUserdata>).vrmAnimations?.[0]
+      if (!animation) {
+        console.warn(`Embedded VRM animation ${name} has no animation data`)
+        return undefined
+      }
+      const clip = createVRMAnimationClip(animation, vrm)
+      clip.name = name
+      reAnchorRootPositionTrack(clip, vrm)
+      return clip
+    }
+    catch (error) {
+      console.warn(`Failed to load embedded VRM animation ${name}`, error)
+      return undefined
+    }
+  }))
+  for (const clip of loaded) {
+    if (clip)
+      clips.set(clip.name, clip)
+  }
+  return clips
 }
 
 export function useBlink() {

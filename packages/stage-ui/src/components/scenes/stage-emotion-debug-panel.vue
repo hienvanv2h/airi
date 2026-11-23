@@ -18,6 +18,10 @@ defineProps<{
   replySimulated?: boolean
   /** Reply emotion held as the resting face. */
   replyExpression?: string
+  /** Body clips the model can play. */
+  motions?: string[]
+  /** Body clip playing now. */
+  currentMotion?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -28,6 +32,7 @@ const emit = defineEmits<{
   (e: 'hold'): void
   (e: 'release'): void
   (e: 'simulateReply', active: boolean): void
+  (e: 'motion', name: string): void
   (e: 'close'): void
 }>()
 
@@ -123,6 +128,25 @@ const token = ref('<|ACT {"emotion":"happy"}|>')
           :key="name"
           class="rounded bg-violet-800/80 px-1 py-1 hover:bg-violet-700"
           @click="emit('expression', name, intensity)"
+        >
+          {{ name }}
+        </button>
+      </div>
+    </div>
+
+    <div v-if="motions && motions.length > 0">
+      <div class="mb-1 text-neutral-400">
+        Body motions (now: <span class="text-white font-mono">{{ currentMotion ?? 'none' }}</span>)
+      </div>
+      <div class="flex flex-wrap gap-1">
+        <button
+          v-for="name in motions"
+          :key="name"
+          :class="[
+            'rounded px-1.5 py-1',
+            currentMotion === name ? 'bg-rose-600' : 'bg-rose-800/80 hover:bg-rose-700',
+          ]"
+          @click="emit('motion', name)"
         >
           {{ name }}
         </button>

@@ -3,6 +3,7 @@ import type { AnimationMixer, Group } from 'three'
 
 import type { useVRMEmote } from '../../composables/vrm/expression'
 import type { VrmInteractionColliderSet } from '../../composables/vrm/interaction'
+import type { useVRMMotion } from '../../composables/vrm/motion'
 
 import { getStageThreeRuntimeTraceContext, isStageThreeRuntimeTraceEnabled } from '../../trace/context'
 import { stageThreeTraceVrmCacheEvent } from '../../trace/eventa'
@@ -13,6 +14,7 @@ export interface ManagedVrmInstance {
   interactionColliders: VrmInteractionColliderSet
   mixer: AnimationMixer
   modelSrc: string
+  motion: ReturnType<typeof useVRMMotion>
   scopeKey: string
   vrm: VRM
 }

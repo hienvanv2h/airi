@@ -572,9 +572,14 @@ const VRM_THINK_RELEASE_AFTER_FIRST_TOKEN_MS = 3000
 let vrmThinkHold: { turnId: string, timeout: ReturnType<typeof setTimeout> } | undefined
 const vrmThinkHolding = ref(false)
 
+// The body follows the think face: the model's think clips (if any) play while it is held.
+let vrmThinkMotionRelease: ReturnType<typeof setTimeout> | undefined
+
 function startVrmThinkHold(turnId: string) {
   clearVrmThinkHold()
   vrmViewerRef.value?.holdExpression(VRM_THINK_EXPRESSION, 1)
+  clearTimeout(vrmThinkMotionRelease)
+  vrmViewerRef.value?.holdMotion()
   vrmThinkHold = {
     turnId,
     timeout: setTimeout(releaseVrmThinkHold, VRM_THINK_HOLD_TIMEOUT_MS, turnId, 0),
@@ -587,6 +592,8 @@ function releaseVrmThinkHold(turnId: string | undefined, afterMs: number) {
     return
   clearVrmThinkHold()
   vrmViewerRef.value?.releaseExpression(VRM_THINK_EXPRESSION, afterMs)
+  clearTimeout(vrmThinkMotionRelease)
+  vrmThinkMotionRelease = setTimeout(() => vrmViewerRef.value?.releaseMotion(), afterMs)
 }
 
 function clearVrmThinkHold() {
@@ -663,6 +670,7 @@ const emotionDebugHandlers = {
   simulateReply: (active: boolean) => {
     vrmReplyDebugActive.value = active
   },
+  motion: (name: string) => vrmViewerRef.value?.playMotion(name),
 }
 
 chatHookCleanups.push(onBeforeSend(async (_message, context) => {
@@ -857,6 +865,8 @@ defineExpose({
         :current="vrmViewerRef?.currentEmotion"
         :variant="vrmViewerRef?.currentVariant"
         :variants="vrmViewerRef?.expressionVariants"
+        :motions="vrmViewerRef?.motionClips"
+        :current-motion="vrmViewerRef?.currentMotion"
         :holding="vrmThinkHolding"
         :reply-active="vrmReplyActive"
         :reply-simulated="vrmReplyDebugActive"
@@ -868,6 +878,7 @@ defineExpose({
         @hold="emotionDebugHandlers.hold"
         @release="emotionDebugHandlers.release"
         @simulate-reply="emotionDebugHandlers.simulateReply"
+        @motion="emotionDebugHandlers.motion"
         @close="emotionDebugOpen = false"
       />
       <SpineScene

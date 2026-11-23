@@ -79,6 +79,7 @@ import { useVRMEmote } from '../../composables/vrm/expression'
 import { createVrmInteractionColliders } from '../../composables/vrm/interaction'
 import { resolveInternalVrmHooks } from '../../composables/vrm/internal-hooks'
 import { useVRMLipSync } from '../../composables/vrm/lip-sync'
+import { useVRMMotion } from '../../composables/vrm/motion'
 import {
   createThreeRendererMemorySnapshot,
   createVrmSceneSummarySnapshot,
@@ -215,6 +216,8 @@ const idleEyeSaccades = useIdleEyeSaccades()
 // deep-unwraps nested refs/computed (e.g. isEmoteActive) and breaks reads
 // like vrmEmote.value.isEmoteActive.value in the render loop.
 const vrmEmote = shallowRef<ReturnType<typeof useVRMEmote>>()
+// Body clips on the mixer: base idle, fidgets and held clips.
+const vrmMotion = shallowRef<ReturnType<typeof useVRMMotion>>()
 const vrmLipSync = useVRMLipSync(audioContext, connectSpeech, toRef(props, 'speechActive'))
 
 // For sky box update
@@ -307,11 +310,12 @@ function getManagedVrmScopeKey() {
 }
 
 function getActiveManagedVrmInstance() {
-  if (!modelSrc.value || !vrm.value || !vrmGroup.value || !vrmAnimationMixer.value || !vrmEmote.value)
+  if (!modelSrc.value || !vrm.value || !vrmGroup.value || !vrmAnimationMixer.value || !vrmEmote.value || !vrmMotion.value)
     return undefined
 
   return createManagedVrmInstance({
     emote: vrmEmote.value,
+    motion: vrmMotion.value,
     group: vrmGroup.value,
     interactionColliders: interactionColliders.value!,
     mixer: vrmAnimationMixer.value,
@@ -322,6 +326,7 @@ function getActiveManagedVrmInstance() {
 function clearActiveManagedVrmRefs() {
   vrmAnimationMixer.value = undefined
   vrmEmote.value = undefined
+  vrmMotion.value = undefined
   vrm.value = undefined
   vrmGroup.value = undefined
   interactionColliders.value = undefined
@@ -344,6 +349,7 @@ function applyManagedVrmInstance(instance: ManagedVrmInstance) {
   vrmGroup.value = instance.group
   vrmAnimationMixer.value = instance.mixer
   vrmEmote.value = instance.emote
+  vrmMotion.value = instance.motion
   interactionColliders.value = instance.interactionColliders
 }
 
@@ -352,6 +358,7 @@ function destroyManagedVrmInstance(instance?: ManagedVrmInstance) {
     return
 
   instance.emote.dispose()
+  instance.motion.dispose()
   instance.mixer.stopAllAction()
   instance.interactionColliders.dispose()
   disposeDetachedVrm(instance.vrm, instance.group)
@@ -464,6 +471,7 @@ function bindManagedVrmInstanceRenderLoop() {
     const tracingEnabled = traceStart > 0
 
     const animationMixerMs = measureFrameStep(tracingEnabled, () => {
+      vrmMotion.value?.update(delta)
       vrmAnimationMixer.value?.update(delta)
     })
     const activeVrm = vrm.value
@@ -720,6 +728,7 @@ async function loadModel() {
   let nextVrmGroup: Group | undefined
   let nextVrmAnimationMixer: AnimationMixer | undefined
   let nextVrmEmote: ReturnType<typeof useVRMEmote> | undefined
+  let nextVrmMotion: ReturnType<typeof useVRMMotion> | undefined
   let didCommitLoad = false
 
   try {
@@ -761,6 +770,7 @@ async function loadModel() {
         nextVrmGroup = reusableInstance.group
         nextVrmAnimationMixer = reusableInstance.mixer
         nextVrmEmote = reusableInstance.emote
+        nextVrmMotion = reusableInstance.motion
 
         runVrmLoadHooks({
           cacheHit: true,
@@ -825,13 +835,17 @@ async function loadModel() {
     /*
       * Animation setting
     */
-    const animation = await loadVRMAnimation(idleAnimation.value)
-    const clip = await clipFromVRMAnimation(_vrm, animation)
+    // A model that carries its own base idle does not need the default one.
+    const animationMetadata = _vrmInfo.animationMetadata
+    const hasOwnIdle = animationMetadata?.idle.base.some(name => _vrmInfo.animationClips.has(name)) ?? false
+    const clip = hasOwnIdle
+      ? undefined
+      : await clipFromVRMAnimation(_vrm, await loadVRMAnimation(idleAnimation.value))
     if (!isLoadRequestCurrent(requestId)) {
       disposeDetachedVrm(nextVrm, nextVrmGroup)
       return
     }
-    if (!clip) {
+    if (!clip && !hasOwnIdle) {
       disposeDetachedVrm(nextVrm, nextVrmGroup)
       emitVrmLoadError(currentLoadReason, loadStartedAt, 'No VRM animation loaded')
       console.warn('No VRM animation loaded')
@@ -840,11 +854,12 @@ async function loadModel() {
       return
     }
     // Re-anchor the root position track to the model origin
-    reAnchorRootPositionTrack(clip, _vrm)
+    if (clip)
+      reAnchorRootPositionTrack(clip, _vrm)
 
     // play animation
     nextVrmAnimationMixer = new AnimationMixer(_vrm.scene)
-    nextVrmAnimationMixer.clipAction(clip).play()
+    nextVrmMotion = useVRMMotion(nextVrmAnimationMixer, _vrmInfo.animationClips, clip, { metadata: animationMetadata })
 
     nextVrmEmote = useVRMEmote(_vrm, { metadata: _vrmInfo.expressionMetadata })
 
@@ -916,6 +931,7 @@ async function loadModel() {
 
     commitManagedVrmInstance(createManagedVrmInstance({
       emote: nextVrmEmote,
+      motion: nextVrmMotion,
       group: _vrmGroup,
       interactionColliders: nextInteractionColliders,
       mixer: nextVrmAnimationMixer,
@@ -946,6 +962,7 @@ async function loadModel() {
       }
 
       nextVrmEmote?.dispose()
+      nextVrmMotion?.dispose()
       nextVrmAnimationMixer?.stopAllAction()
       disposeDetachedVrm(nextVrm, nextVrmGroup)
     }
@@ -1157,6 +1174,22 @@ defineExpose({
   scene: computed(() => vrm.value?.scene),
   /** Emotion the emote currently drives, or null when it rests on no emotion. */
   currentEmotion: computed(() => vrmEmote.value?.currentEmotion.value ?? null),
+  /** Body clips the model can play, by name. */
+  motionClips: computed(() => vrmMotion.value?.clipNames ?? []),
+  /** Body clip playing now, or null. */
+  currentMotion: computed(() => vrmMotion.value?.currentClip.value ?? null),
+  /** Plays a body clip once (a looping clip becomes the base idle). */
+  playMotion(name: string) {
+    return vrmMotion.value?.play(name) ?? false
+  },
+  /** Holds one of the clips, or of the model's think clips when omitted, until releaseMotion. */
+  holdMotion(names?: string[]) {
+    return vrmMotion.value?.hold(names ?? vrmMotion.value.thinkClips) ?? false
+  },
+  /** Fades a held clip back to the base idle. */
+  releaseMotion() {
+    vrmMotion.value?.release()
+  },
   lookAtUpdate(target: Vec3) {
     idleEyeSaccades.instantUpdate(vrm.value, target)
   },

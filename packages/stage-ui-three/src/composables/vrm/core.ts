@@ -1,12 +1,15 @@
 import type { VRM, VRMCore } from '@pixiv/three-vrm'
-import type { Mesh, Object3D, Scene } from 'three'
+import type { AnimationClip, Mesh, Object3D, Scene } from 'three'
 
+import type { VRMAnimationMetadata } from './animation-metadata'
 import type { VRMExpressionMetadata } from './expression-metadata'
 
 import { VRMUtils } from '@pixiv/three-vrm'
 import { VRMLookAtQuaternionProxy } from '@pixiv/three-vrm-animation'
 import { Box3, Group, Quaternion, Vector3 } from 'three'
 
+import { loadEmbeddedAnimationClips } from './animation'
+import { parseAnimationMetadata } from './animation-metadata'
 import { parseExpressionMetadata } from './expression-metadata'
 import { useVRMLoader } from './loader'
 
@@ -25,6 +28,9 @@ export async function loadVrm(model: string, options?: {
   modelSize: Vector3
   initialCameraOffset: Vector3
   expressionMetadata?: VRMExpressionMetadata
+  animationMetadata?: VRMAnimationMetadata
+  /** Body clips embedded in the VRM, by name. */
+  animationClips: Map<string, AnimationClip>
 } | undefined> {
   const loader = useVRMLoader()
   const gltf = await loader.loadAsync(model, progress => options?.onProgress?.(progress))
@@ -74,6 +80,9 @@ export async function loadVrm(model: string, options?: {
   }
   (_vrm as VRM).springBoneManager?.reset()
   _vrmGroup.updateMatrixWorld(true)
+
+  const animationMetadata = parseAnimationMetadata(userData)
+  const animationClips = await loadEmbeddedAnimationClips(gltf.parser, animationMetadata, _vrm)
 
   function computeBoundingBox(vrm: Object3D) {
     const box = new Box3()
@@ -134,5 +143,7 @@ export async function loadVrm(model: string, options?: {
     modelSize,
     initialCameraOffset,
     expressionMetadata: parseExpressionMetadata(userData),
+    animationMetadata,
+    animationClips,
   }
 }
