@@ -31,4 +31,14 @@ describe('useAiriRuntimePrompt', () => {
     expect(prompt).toContain('base.prompt.suffix')
     expect(prompt).toContain('base.prompt.emoji')
   })
+
+  it('tells awkward and embarrassed apart in the emotion list', () => {
+    i18nMock.hasTranslation.mockReturnValue(true)
+
+    const prompt = useAiriRuntimePrompt().value
+
+    expect(prompt).toContain('- awkward (Emotion for feeling Awkward: mild unease')
+    expect(prompt).toContain('- embarrassed (Emotion for feeling Embarrassed: blushing, flustered or shy')
+    expect(prompt).toContain('- happy (Emotion for feeling Happy)')
+  })
 })

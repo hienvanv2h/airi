@@ -2,6 +2,7 @@
 import type { Live2DLipSync, Live2DLipSyncOptions } from '@proj-airi/model-driver-lipsync'
 import type { Profile } from '@proj-airi/model-driver-lipsync/shared/wlipsync'
 import type { CaptionChannelEvent, PresenceBubbleState } from '@proj-airi/stage-shared'
+import type { Emotion as SpineEmotion } from '@proj-airi/stage-ui-spine'
 import type { VrmInteractionTarget } from '@proj-airi/stage-ui-three'
 
 import type { EmotionPayload } from '../../constants/emotions'
@@ -279,22 +280,29 @@ const emotionsQueue = createQueue<EmotionPayload>({
           await vrmViewerRef.value!.setExpression(value, ctx.data.intensity)
       }
       else if (stageModelRenderer.value === 'live2d') {
-        currentMotion.value = { group: EMOTION_EmotionMotionName_value[ctx.data.name] }
+        currentMotion.value = { group: EMOTION_EmotionMotionName_value[withoutEmbarrassed(ctx.data.name)] }
       }
       else if (stageModelRenderer.value === 'spine') {
-        spineSceneRef.value?.setEmotion(ctx.data.name, ctx.data.intensity)
+        spineSceneRef.value?.setEmotion(withoutEmbarrassed(ctx.data.name) as SpineEmotion, ctx.data.intensity)
       }
       else if (stageModelRenderer.value === 'tachie') {
-        tachieSceneRef.value?.setEmotion(ctx.data.name, ctx.data.intensity)
+        tachieSceneRef.value?.setEmotion(withoutEmbarrassed(ctx.data.name), ctx.data.intensity)
       }
       else if (stageModelRenderer.value === 'mmd') {
-        mmdSceneRef.value?.setEmotion(ctx.data.name, ctx.data.intensity)
+        mmdSceneRef.value?.setEmotion(withoutEmbarrassed(ctx.data.name), ctx.data.intensity)
       }
     },
   ],
 })
 
 const streamingControl = useLlmStreamingControlStore()
+
+// Only VRM models with their own embarrassed faces tell it apart; the other renderers have
+// no motion or animation for it, so it plays as awkward there.
+type RendererEmotion = Exclude<`${Emotion}`, `${Emotion.Embarrassed}`>
+function withoutEmbarrassed(emotion: Emotion): RendererEmotion {
+  return emotion === Emotion.Embarrassed ? Emotion.Awkward : emotion as RendererEmotion
+}
 
 function toStageEmotionPayload(payload: { name: string, intensity: number }): EmotionPayload | undefined {
   switch (payload.name) {
@@ -310,6 +318,8 @@ function toStageEmotionPayload(payload: { name: string, intensity: number }): Em
       return { name: Emotion.Surprise, intensity: payload.intensity }
     case 'awkward':
       return { name: Emotion.Awkward, intensity: payload.intensity }
+    case 'embarrassed':
+      return { name: Emotion.Embarrassed, intensity: payload.intensity }
     case 'question':
       return { name: Emotion.Question, intensity: payload.intensity }
     case 'curious':

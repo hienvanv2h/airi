@@ -1,7 +1,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-import { EMOTION_EmotionMotionName_value, EMOTION_VALUES } from '../constants/emotions'
+import { EMOTION_EmotionMotionName_value, EMOTION_PromptHint_value, EMOTION_VALUES } from '../constants/emotions'
 
 const RUNTIME_PROMPT_KEYS = [
   'base.prompt.emotion',
@@ -20,7 +20,10 @@ export function useAiriRuntimePrompt() {
     return [
       t('base.prompt.emotion'),
       EMOTION_VALUES
-        .map(emotion => `- ${emotion} (Emotion for feeling ${EMOTION_EmotionMotionName_value[emotion]})`)
+        .map((emotion) => {
+          const hint = EMOTION_PromptHint_value[emotion]
+          return `- ${emotion} (Emotion for feeling ${EMOTION_EmotionMotionName_value[emotion]}${hint ? `: ${hint}` : ''})`
+        })
         .join('\n'),
       t('base.prompt.suffix'),
       t('base.prompt.emoji'),

@@ -10,6 +10,7 @@ const emotionValues = [
   'think',
   'surprised',
   'awkward',
+  'embarrassed',
   'question',
   'curious',
   'neutral',
