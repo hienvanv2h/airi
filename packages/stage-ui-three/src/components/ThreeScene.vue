@@ -1007,10 +1007,11 @@ defineExpose({
   motionClips: computed<string[]>(() => modelRef.value?.motionClips ?? []),
   currentMotion: computed(() => modelRef.value?.currentMotion ?? null),
   playMotion: (name: string) => modelRef.value?.playMotion(name) ?? false,
-  holdMotion: (names?: string[]) => modelRef.value?.holdMotion(names) ?? false,
-  releaseMotion: () => {
-    modelRef.value?.releaseMotion()
+  holdMotion: (names?: string[], tag?: string) => modelRef.value?.holdMotion(names, tag) ?? false,
+  releaseMotion: (tag?: string) => {
+    modelRef.value?.releaseMotion(tag)
   },
+  playEmotionMotion: (emotion: string) => modelRef.value?.playEmotionMotion(emotion) ?? null,
   // NOTICE: External runtime hooks are intentionally separate from internal VRM model hooks.
   // This public frame hook is reserved for live pose/tracking input and is forwarded to VRMModel
   // without exposing the internal model/material lifecycle hook pipeline.

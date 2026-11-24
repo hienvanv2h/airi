@@ -1182,13 +1182,20 @@ defineExpose({
   playMotion(name: string) {
     return vrmMotion.value?.play(name) ?? false
   },
-  /** Holds one of the clips, or of the model's think clips when omitted, until releaseMotion. */
-  holdMotion(names?: string[]) {
-    return vrmMotion.value?.hold(names ?? vrmMotion.value.thinkClips) ?? false
+  /**
+   * Holds one of the clips, or of the model's think clips when omitted, until releaseMotion.
+   * `tag` names the holder; releaseMotion(tag) only ends that holder's clip.
+   */
+  holdMotion(names?: string[], tag?: string) {
+    return vrmMotion.value?.hold(names ?? vrmMotion.value.thinkClips, tag) ?? false
   },
-  /** Fades a held clip back to the base idle. */
-  releaseMotion() {
-    vrmMotion.value?.release()
+  /** Fades a held clip back to the base idle; with a tag, only that holder's clip. */
+  releaseMotion(tag?: string) {
+    vrmMotion.value?.release(tag)
+  },
+  /** Plays one of the emotion's body clips; a looping one is held under the 'emotion' tag. Null without clips. */
+  playEmotionMotion(emotion: string) {
+    return vrmMotion.value?.playEmotion(emotion) ?? null
   },
   lookAtUpdate(target: Vec3) {
     idleEyeSaccades.instantUpdate(vrm.value, target)

@@ -18,10 +18,16 @@ export interface VRMMotionOptions {
 
 type MotionMode = 'base' | 'fidget' | 'hold'
 
+/** What an emotion started: a one-shot clip plays once, a held clip stays until released. */
+export interface EmotionMotion {
+  clip: string
+  held: boolean
+}
+
 /**
  * Drives the body clips of a VRM on one AnimationMixer: the model rests in a looping base
  * idle, now and then plays a one-shot fidget and fades back, and can hold a clip (for
- * example while it waits for a reply) until released.
+ * example while it waits for a reply) until released. Emotions pick from their own clips.
  *
  * @param mixer The model's mixer; this composable owns its actions.
  * @param clips Clips by name, already bound to the model.
@@ -48,12 +54,20 @@ export function useVRMMotion(
   }
   const fidgetNames = metadata?.idle.fidgets.filter(name => named.has(name)) ?? []
   const thinkNames = metadata?.think.filter(name => named.has(name)) ?? []
+  const emotionNames: Record<string, string[]> = {}
+  for (const [emotion, names] of Object.entries(metadata?.emotions ?? {})) {
+    const valid = names.filter(name => named.has(name))
+    if (valid.length > 0)
+      emotionNames[emotion] = valid
+  }
   const [minInterval, maxInterval] = metadata?.idle.interval ?? DEFAULT_FIDGET_INTERVAL
 
   const currentClip = shallowRef<string>()
   const mode = shallowRef<MotionMode>('base')
   let current: AnimationAction | undefined
   let fidgetIn = 0
+  // Who holds the clip, so one owner's release cannot end another owner's hold.
+  let holdTag: string | undefined
 
   function pick(names: readonly string[]): string | undefined {
     return names[Math.floor(random() * names.length)] ?? names[0]
@@ -126,21 +140,47 @@ export function useVRMMotion(
       return fadeTo(name, false)
     }
     mode.value = 'fidget'
+    holdTag = undefined
     return fadeTo(name, true)
   }
 
-  /** Plays one of the clips until release(); fidgets wait meanwhile. */
-  function hold(names: readonly string[]) {
+  /**
+   * Plays one of the clips until release(); fidgets wait meanwhile.
+   * @param tag The holder; release(tag) only ends a hold with the same tag.
+   */
+  function hold(names: readonly string[], tag?: string) {
     const name = pick(names.filter(name => named.has(name)))
     if (!name)
       return false
     mode.value = 'hold'
+    holdTag = tag
     return fadeTo(name, true)
   }
 
-  function release() {
-    if (mode.value === 'hold')
-      toBase()
+  /** Fades a held clip back to the base. With a tag, only that holder's clip. */
+  function release(tag?: string) {
+    if (mode.value !== 'hold' || (tag !== undefined && tag !== holdTag))
+      return
+    holdTag = undefined
+    toBase()
+  }
+
+  /**
+   * Plays one of an emotion's clips: a looping clip is held (with the tag) until released,
+   * a one-shot clip plays once and fades back to the base. Returns undefined without clips.
+   */
+  function playEmotion(emotion: string, tag = 'emotion'): EmotionMotion | undefined {
+    const name = pick(emotionNames[emotion] ?? [])
+    if (!name)
+      return undefined
+    if (loops.has(name)) {
+      hold([name], tag)
+      return { clip: name, held: true }
+    }
+    mode.value = 'fidget'
+    holdTag = undefined
+    fadeTo(name, true)
+    return { clip: name, held: false }
   }
 
   function update(delta: number) {
@@ -179,7 +219,10 @@ export function useVRMMotion(
     clipNames: [...named.keys()],
     /** Clips the model holds while it waits for a reply. */
     thinkClips: thinkNames,
+    /** Emotion -> clips it picks from. */
+    emotionClips: emotionNames,
     play,
+    playEmotion,
     hold,
     release,
     update,

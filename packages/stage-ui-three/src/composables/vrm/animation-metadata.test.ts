@@ -15,6 +15,7 @@ describe('parseAnimationMetadata', () => {
           },
           idle: { base: ['breathing', 'missing'], fidgets: ['look', 3], interval: [4, 9] },
           think: ['thinking'],
+          emotions: { happy: ['look', 'missing'], sad: ['missing'], angry: 'x' },
         },
       },
     })
@@ -27,6 +28,7 @@ describe('parseAnimationMetadata', () => {
       },
       idle: { base: ['breathing'], fidgets: ['look'], interval: [4, 9] },
       think: ['thinking'],
+      emotions: { happy: ['look'] },
     })
   })
 

@@ -33,9 +33,12 @@ const metadata: VRMAnimationMetadata = {
     breathing: { bufferView: 0, loop: true },
     fidget_look: { bufferView: 1, loop: false },
     thinking: { bufferView: 2, loop: true },
+    fidget_bounce: { bufferView: 3, loop: false },
+    arms_crossed: { bufferView: 4, loop: true },
   },
   idle: { base: ['breathing'], fidgets: ['fidget_look'], interval: [2, 4] },
   think: ['thinking'],
+  emotions: { happy: ['fidget_bounce'], angry: ['arms_crossed'] },
 }
 
 describe('useVRMMotion', () => {
@@ -78,6 +81,39 @@ describe('useVRMMotion', () => {
     expect(weightOf('thinking')).toBe(1)
 
     motion.release()
+    step(0.6)
+    expect(motion.currentClip.value).toBe('breathing')
+    expect(weightOf('breathing')).toBe(1)
+  })
+
+  it('plays a one-shot emotion clip once and returns to the base', () => {
+    const { motion, weightOf, step } = setup(metadata)
+    expect(motion.playEmotion('happy')).toEqual({ clip: 'fidget_bounce', held: false })
+    expect(motion.mode.value).toBe('fidget')
+    step(3.1)
+    expect(motion.currentClip.value).toBe('breathing')
+    step(0.6)
+    expect(weightOf('breathing')).toBe(1)
+    expect(motion.playEmotion('sad')).toBeUndefined()
+  })
+
+  it('holds a looping emotion clip until its own holder releases it', () => {
+    // ROOT CAUSE:
+    //
+    // The stage releases the think clip a few seconds after the reply's first token.
+    // The reply's ACT emotion arrives with that token and may hold its own clip; an
+    // untagged release would end the emotion clip the moment the think timer fired.
+    //
+    // We fixed this by tagging holds, so release('think') only ends a think hold.
+    const { motion, weightOf, step } = setup(metadata)
+    motion.hold(metadata.think, 'think')
+    expect(motion.playEmotion('angry')).toEqual({ clip: 'arms_crossed', held: true })
+    motion.release('think')
+    step(1)
+    expect(motion.mode.value).toBe('hold')
+    expect(weightOf('arms_crossed')).toBe(1)
+
+    motion.release('emotion')
     step(0.6)
     expect(motion.currentClip.value).toBe('breathing')
     expect(weightOf('breathing')).toBe(1)

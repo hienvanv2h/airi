@@ -272,6 +272,7 @@ const emotionsQueue = createQueue<EmotionPayload>({
         if (!value)
           return
 
+        startVrmEmotionMotion(ctx.data.name)
         if (isVrmReplyActive())
           holdVrmReplyExpression(value, ctx.data.intensity)
         else
@@ -573,13 +574,16 @@ let vrmThinkHold: { turnId: string, timeout: ReturnType<typeof setTimeout> } | u
 const vrmThinkHolding = ref(false)
 
 // The body follows the think face: the model's think clips (if any) play while it is held.
+// Holds are tagged, so the think release cannot end a clip the reply's emotion holds.
+const VRM_THINK_MOTION_TAG = 'think'
+const VRM_EMOTION_MOTION_TAG = 'emotion'
 let vrmThinkMotionRelease: ReturnType<typeof setTimeout> | undefined
 
 function startVrmThinkHold(turnId: string) {
   clearVrmThinkHold()
   vrmViewerRef.value?.holdExpression(VRM_THINK_EXPRESSION, 1)
   clearTimeout(vrmThinkMotionRelease)
-  vrmViewerRef.value?.holdMotion()
+  vrmViewerRef.value?.holdMotion(undefined, VRM_THINK_MOTION_TAG)
   vrmThinkHold = {
     turnId,
     timeout: setTimeout(releaseVrmThinkHold, VRM_THINK_HOLD_TIMEOUT_MS, turnId, 0),
@@ -593,7 +597,7 @@ function releaseVrmThinkHold(turnId: string | undefined, afterMs: number) {
   clearVrmThinkHold()
   vrmViewerRef.value?.releaseExpression(VRM_THINK_EXPRESSION, afterMs)
   clearTimeout(vrmThinkMotionRelease)
-  vrmThinkMotionRelease = setTimeout(() => vrmViewerRef.value?.releaseMotion(), afterMs)
+  vrmThinkMotionRelease = setTimeout(() => vrmViewerRef.value?.releaseMotion(VRM_THINK_MOTION_TAG), afterMs)
 }
 
 function clearVrmThinkHold() {
@@ -636,8 +640,36 @@ function resolveVrmExpression(emotion: Emotion): string | undefined {
   return EMOTION_VRMExpressionName_value[emotion]
 }
 
+// The body follows the ACT emotion with one of the model's clips for it: a one-shot clip
+// plays once; a held clip (a pose) stays like the face, until the reply ends or for 3 s.
+let vrmEmotionMotionRelease: ReturnType<typeof setTimeout> | undefined
+let vrmEmotionMotionHeld = false
+
+function startVrmEmotionMotion(emotion: Emotion) {
+  const motion = vrmViewerRef.value?.playEmotionMotion(emotion)
+  if (!motion)
+    return
+  clearTimeout(vrmEmotionMotionRelease)
+  vrmEmotionMotionHeld = motion.held
+  if (motion.held && !isVrmReplyActive())
+    releaseVrmEmotionMotion(VRM_REPLY_EMOTION_LINGER_MS)
+}
+
+function releaseVrmEmotionMotion(afterMs: number) {
+  if (!vrmEmotionMotionHeld)
+    return
+  clearTimeout(vrmEmotionMotionRelease)
+  vrmEmotionMotionRelease = setTimeout(() => {
+    vrmEmotionMotionHeld = false
+    vrmViewerRef.value?.releaseMotion(VRM_EMOTION_MOTION_TAG)
+  }, afterMs)
+}
+
 watch(vrmReplyActive, (active) => {
-  if (active || !vrmReplyExpression.value)
+  if (active)
+    return
+  releaseVrmEmotionMotion(VRM_REPLY_EMOTION_LINGER_MS)
+  if (!vrmReplyExpression.value)
     return
   vrmViewerRef.value?.releaseExpression(vrmReplyExpression.value, VRM_REPLY_EMOTION_LINGER_MS)
   vrmReplyExpression.value = undefined

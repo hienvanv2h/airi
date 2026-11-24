@@ -7,7 +7,8 @@
  *   "version": 1,
  *   "clips": { "idle_breathing": { "bufferView": 120, "loop": true }, "look_around": { "bufferView": 121 } },
  *   "idle": { "base": ["idle_breathing"], "fidgets": ["look_around"], "interval": [6, 12] },
- *   "think": ["thinking"]
+ *   "think": ["thinking"],
+ *   "emotions": { "happy": ["happy_bounce"], "angry": ["arms_crossed"] }
  * } } }
  * ```
  *
@@ -25,6 +26,8 @@ export interface VRMAnimationMetadata {
   }
   /** Clips held while the character waits for a reply. */
   think: string[]
+  /** AIRI emotion -> clips to pick from: one-shot clips play once, looping clips are held. */
+  emotions: Record<string, string[]>
 }
 
 export const DEFAULT_FIDGET_INTERVAL: [number, number] = [6, 12]
@@ -64,6 +67,14 @@ export function parseAnimationMetadata(userData: unknown): VRMAnimationMetadata 
     return undefined
 
   const idle = isRecord(raw.idle) ? raw.idle : {}
+  const emotions: VRMAnimationMetadata['emotions'] = {}
+  if (isRecord(raw.emotions)) {
+    for (const [emotion, names] of Object.entries(raw.emotions)) {
+      const valid = clipNames(names, clips)
+      if (valid.length > 0)
+        emotions[emotion] = valid
+    }
+  }
   return {
     clips,
     idle: {
@@ -72,5 +83,6 @@ export function parseAnimationMetadata(userData: unknown): VRMAnimationMetadata 
       interval: parseInterval(idle.interval),
     },
     think: clipNames(raw.think, clips),
+    emotions,
   }
 }
