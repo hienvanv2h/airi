@@ -273,11 +273,16 @@ const emotionsQueue = createQueue<EmotionPayload>({
         if (!value)
           return
 
-        startVrmEmotionMotion(ctx.data.name)
-        if (isVrmReplyActive())
+        const motion = startVrmEmotionMotion(ctx.data.name)
+        if (motion?.faceSeconds !== undefined) {
+          showVrmFaceFor(value, ctx.data.intensity, motion.faceSeconds)
+        }
+        else if (isVrmReplyActive()) {
           holdVrmReplyExpression(value, ctx.data.intensity)
-        else
+        }
+        else {
           await vrmViewerRef.value!.setExpression(value, ctx.data.intensity)
+        }
       }
       else if (stageModelRenderer.value === 'live2d') {
         currentMotion.value = { group: EMOTION_EmotionMotionName_value[withoutEmbarrassed(ctx.data.name)] }
@@ -636,6 +641,13 @@ function isVrmReplyActive() {
   return vrmReplyActive.value
 }
 
+// A startle's face ends with its motion, even inside a reply: it is not the reply's resting face.
+function showVrmFaceFor(expression: string, intensity: number, seconds: number) {
+  vrmReplyExpression.value = undefined
+  vrmViewerRef.value?.holdExpression(expression, intensity)
+  vrmViewerRef.value?.releaseExpression(expression, seconds * 1000)
+}
+
 function holdVrmReplyExpression(expression: string, intensity: number, variant?: string) {
   vrmReplyExpression.value = expression
   vrmViewerRef.value?.holdExpression(expression, intensity, variant)
@@ -658,11 +670,12 @@ let vrmEmotionMotionHeld = false
 function startVrmEmotionMotion(emotion: Emotion) {
   const motion = vrmViewerRef.value?.playEmotionMotion(emotion)
   if (!motion)
-    return
+    return undefined
   clearTimeout(vrmEmotionMotionRelease)
   vrmEmotionMotionHeld = motion.held
   if (motion.held && !isVrmReplyActive())
     releaseVrmEmotionMotion(VRM_REPLY_EMOTION_LINGER_MS)
+  return motion
 }
 
 function releaseVrmEmotionMotion(afterMs: number) {

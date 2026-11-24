@@ -22,6 +22,8 @@ type MotionMode = 'base' | 'fidget' | 'hold'
 export interface EmotionMotion {
   clip: string
   held: boolean
+  /** Seconds the emotion's face should last, when the clip ends it (see VRMAnimationMetadata). */
+  faceSeconds?: number
 }
 
 /**
@@ -187,7 +189,8 @@ export function useVRMMotion(
     mode.value = 'fidget'
     holdTag = undefined
     fadeTo(name, true)
-    return { clip: name, held: false }
+    const faceSeconds = metadata?.clips[name]?.faceSeconds
+    return faceSeconds === undefined ? { clip: name, held: false } : { clip: name, held: false, faceSeconds }
   }
 
   function update(delta: number) {

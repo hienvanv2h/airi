@@ -97,6 +97,15 @@ describe('useVRMMotion', () => {
     expect(motion.playEmotion('sad')).toBeUndefined()
   })
 
+  it('reports how long the face lasts for a clip that ends its emotion', () => {
+    const startle: VRMAnimationMetadata = {
+      ...metadata,
+      clips: { ...metadata.clips, fidget_bounce: { bufferView: 3, loop: false, faceSeconds: 0.9 } },
+    }
+    const { motion } = setup(startle)
+    expect(motion.playEmotion('happy')).toEqual({ clip: 'fidget_bounce', held: false, faceSeconds: 0.9 })
+  })
+
   it('holds a looping emotion clip until its own holder releases it', () => {
     // ROOT CAUSE:
     //

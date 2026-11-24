@@ -15,8 +15,12 @@
  * Models without it keep AIRI's default idle clip.
  */
 export interface VRMAnimationMetadata {
-  /** `fade`: seconds of cross-fade into and out of the clip, when it differs from the default. */
-  clips: Record<string, { bufferView: number, loop: boolean, fade?: number }>
+  /**
+   * `fade`: seconds of cross-fade into and out of the clip, when it differs from the default.
+   * `faceSeconds`: for an emotion's one-shot clip, how long the emotion's face lasts; the face
+   * then ends with the motion instead of staying for the whole reply (a startle).
+   */
+  clips: Record<string, { bufferView: number, loop: boolean, fade?: number, faceSeconds?: number }>
   idle: {
     /** Looping clips the model rests in. */
     base: string[]
@@ -66,6 +70,8 @@ export function parseAnimationMetadata(userData: unknown): VRMAnimationMetadata 
     clips[name] = { bufferView: clip.bufferView as number, loop: clip.loop === true }
     if (typeof clip.fade === 'number' && clip.fade >= 0 && clip.fade <= 5)
       clips[name].fade = clip.fade
+    if (typeof clip.faceSeconds === 'number' && clip.faceSeconds > 0 && clip.faceSeconds <= 30)
+      clips[name].faceSeconds = clip.faceSeconds
   }
   if (Object.keys(clips).length === 0)
     return undefined
