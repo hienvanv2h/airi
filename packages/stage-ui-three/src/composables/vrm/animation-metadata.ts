@@ -5,7 +5,7 @@
  * ```json
  * { "airi": { "animations": {
  *   "version": 1,
- *   "clips": { "idle_breathing": { "bufferView": 120, "loop": true }, "look_around": { "bufferView": 121 } },
+ *   "clips": { "idle_breathing": { "bufferView": 120, "loop": true }, "startle": { "bufferView": 121, "fade": 0.1 } },
  *   "idle": { "base": ["idle_breathing"], "fidgets": ["look_around"], "interval": [6, 12] },
  *   "think": ["thinking"],
  *   "emotions": { "happy": ["happy_bounce"], "angry": ["arms_crossed"] }
@@ -15,7 +15,8 @@
  * Models without it keep AIRI's default idle clip.
  */
 export interface VRMAnimationMetadata {
-  clips: Record<string, { bufferView: number, loop: boolean }>
+  /** `fade`: seconds of cross-fade into and out of the clip, when it differs from the default. */
+  clips: Record<string, { bufferView: number, loop: boolean, fade?: number }>
   idle: {
     /** Looping clips the model rests in. */
     base: string[]
@@ -60,8 +61,11 @@ export function parseAnimationMetadata(userData: unknown): VRMAnimationMetadata 
 
   const clips: VRMAnimationMetadata['clips'] = {}
   for (const [name, clip] of Object.entries(raw.clips)) {
-    if (isRecord(clip) && Number.isInteger(clip.bufferView) && (clip.bufferView as number) >= 0)
-      clips[name] = { bufferView: clip.bufferView as number, loop: clip.loop === true }
+    if (!isRecord(clip) || !Number.isInteger(clip.bufferView) || (clip.bufferView as number) < 0)
+      continue
+    clips[name] = { bufferView: clip.bufferView as number, loop: clip.loop === true }
+    if (typeof clip.fade === 'number' && clip.fade >= 0 && clip.fade <= 5)
+      clips[name].fade = clip.fade
   }
   if (Object.keys(clips).length === 0)
     return undefined

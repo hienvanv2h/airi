@@ -119,6 +119,27 @@ describe('useVRMMotion', () => {
     expect(weightOf('breathing')).toBe(1)
   })
 
+  it('fades into and out of a clip over its own fade', () => {
+    const quick: VRMAnimationMetadata = {
+      ...metadata,
+      clips: { ...metadata.clips, fidget_bounce: { bufferView: 3, loop: false, fade: 0.1 } },
+    }
+    const { motion, weightOf, step } = setup(quick)
+    motion.playEmotion('happy')
+    step(0.1)
+    // The default 0.5 s fade would still be blending here.
+    expect(weightOf('fidget_bounce')).toBe(1)
+    expect(weightOf('breathing')).toBeCloseTo(0, 5)
+
+    // The 3 s clip hands back to the base only 0.1 s before its end.
+    step(2.7)
+    expect(motion.currentClip.value).toBe('fidget_bounce')
+    step(0.2)
+    expect(motion.currentClip.value).toBe('breathing')
+    step(0.1)
+    expect(weightOf('breathing')).toBe(1)
+  })
+
   it('ignores unknown clips', () => {
     const { motion } = setup(metadata)
     expect(motion.play('nope')).toBe(false)

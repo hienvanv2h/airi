@@ -10,7 +10,7 @@ import { DEFAULT_FIDGET_INTERVAL } from './animation-metadata'
 export interface VRMMotionOptions {
   /** Body animations the model carries; without base clips the fallback idle is used. */
   metadata?: VRMAnimationMetadata
-  /** Seconds of cross-fade between clips. */
+  /** Seconds of cross-fade between clips; a clip's own `fade` in the metadata wins. */
   fade?: number
   /** Returns a number in [0, 1); injectable for tests. */
   random?: () => number
@@ -43,6 +43,10 @@ export function useVRMMotion(
   const fade = options.fade ?? 0.6
   const random = options.random ?? Math.random
   const metadata = options.metadata
+  const clipFades = new Map(Object.entries(metadata?.clips ?? {})
+    .filter(([, clip]) => clip.fade !== undefined)
+    .map(([name, clip]) => [name, clip.fade!]))
+  const fadeOf = (name: string | undefined) => (name !== undefined ? clipFades.get(name) : undefined) ?? fade
   const loops = new Set(Object.entries(metadata?.clips ?? {}).filter(([, clip]) => clip.loop).map(([name]) => name))
 
   const named = new Map(clips)
@@ -94,10 +98,11 @@ export function useVRMMotion(
   }
 
   /**
-   * Cross-fades to a clip. Without restart, a clip faded out earlier resumes where it
-   * stopped, so a base idle does not jump back to its first frame.
+   * Cross-fades to a clip, over `duration` seconds (by default the clip's own fade). Without
+   * restart, a clip faded out earlier resumes where it stopped, so a base idle does not jump
+   * back to its first frame.
    */
-  function fadeTo(name: string, restart: boolean) {
+  function fadeTo(name: string, restart: boolean, duration = fadeOf(name)) {
     const next = actionOf(name)
     if (!next)
       return false
@@ -116,7 +121,7 @@ export function useVRMMotion(
     next.play()
     // A clamped one-shot is paused on its last frame; its weight still fades out.
     if (current)
-      next.crossFadeFrom(current, fade, false)
+      next.crossFadeFrom(current, duration, false)
     current = next
     currentClip.value = name
     return true
@@ -124,10 +129,12 @@ export function useVRMMotion(
 
   function toBase() {
     const name = pick(baseNames)
+    // Leaving a clip with its own fade (a startle that settles by itself) keeps that fade.
+    const duration = fadeOf(currentClip.value)
     mode.value = 'base'
     scheduleFidget()
     if (name)
-      fadeTo(name, false)
+      fadeTo(name, false, duration)
   }
 
   /** Plays a one-shot clip now (the debug panel's button), then fades back to the base. */
@@ -200,7 +207,7 @@ export function useVRMMotion(
     if (mode.value === 'fidget' && current) {
       // Start the fade early enough that the base is fully back when the clip ends.
       const remaining = current.getClip().duration - current.time
-      if (remaining <= fade)
+      if (remaining <= fadeOf(currentClip.value))
         toBase()
     }
   }

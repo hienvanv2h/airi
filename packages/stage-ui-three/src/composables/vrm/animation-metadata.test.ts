@@ -10,7 +10,7 @@ describe('parseAnimationMetadata', () => {
           version: 1,
           clips: {
             breathing: { bufferView: 10, loop: true },
-            look: { bufferView: 11 },
+            look: { bufferView: 11, fade: 0.15 },
             thinking: { bufferView: 12, loop: true },
           },
           idle: { base: ['breathing', 'missing'], fidgets: ['look', 3], interval: [4, 9] },
@@ -23,7 +23,7 @@ describe('parseAnimationMetadata', () => {
     expect(metadata).toEqual({
       clips: {
         breathing: { bufferView: 10, loop: true },
-        look: { bufferView: 11, loop: false },
+        look: { bufferView: 11, loop: false, fade: 0.15 },
         thinking: { bufferView: 12, loop: true },
       },
       idle: { base: ['breathing'], fidgets: ['look'], interval: [4, 9] },
